@@ -1,0 +1,50 @@
+const AWS = require('aws-sdk');
+const axios = require('axios');
+
+const RDS = new AWS.RDSDataService();
+
+const AURORA_DB_ENDPOINT = 'your-aurora-db-endpoint';
+const AURORA_DB_NAME = 'your-db-name';
+const AURORA_DB_SECRET_ARN = 'your-db-secret-arn';
+const AURORA_DB_RESOURCE_ARN = 'your-db-resource-arn';
+
+const WEBSITE_URL = 'https://example.com';
+
+exports.handler = async (event) => {
+    try {
+        // Make HTTP request to the website
+        const response = await axios.get(WEBSITE_URL);
+        
+        // Extract relevant data from the response
+        const statusCode = response.status;
+        const responseTime = response.config.responseTime;
+
+        // Insert monitoring data into Aurora database
+        await insertMonitoringData(statusCode, responseTime);
+        
+        return { statusCode: 200, body: 'Monitoring completed successfully.' };
+    } catch (error) {
+        console.error('Error during monitoring:', error);
+        return { statusCode: 500, body: 'Error during monitoring.' };
+    }
+};
+
+const insertMonitoringData = async (statusCode, responseTime) => {
+    const sql = `
+        INSERT INTO MonitoringData (statusCode, responseTime)
+        VALUES (:statusCode, :responseTime)
+    `;
+
+    const params = {
+        secretArn: AURORA_DB_SECRET_ARN,
+        resourceArn: AURORA_DB_RESOURCE_ARN,
+        sql,
+        parameters: [
+            { name: 'statusCode', value: { longValue: statusCode } },
+            { name: 'responseTime', value: { stringValue: responseTime.toString() } }
+        ],
+        database: AURORA_DB_NAME
+    };
+
+    await RDS.executeStatement(params).promise();
+};
